@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Heart Particles - CGI style</title>
+<style>
+  html,body { height:100%; margin:0; background:#000; overflow:hidden; }
+  #info {
+    position: absolute;
+    left: 12px;
+    top: 12px;
+    color: #ff6666;
+    font-family: system-ui, "Segoe UI", Roboto, Arial;
+    z-index: 5;
+    user-select:none;
+    font-size:12px;
+    opacity:0.8;
+  }
+  #startBtn {
+    position: absolute;
+    right: 12px;
+    top: 12px;
+    z-index: 5;
+    padding:8px 12px;
+    border-radius:8px;
+    border:0;
+    background:#ff3b3b;
+    color:white;
+    cursor:pointer;
+    font-weight:600;
+    font-family:inherit;
+  }
+  #hint {
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    color:#ff7b7b;
+    font-family: inherit;
+    font-size:13px;
+    opacity:0.6;
+  }
+</style>
+</head>
+<body>
+<div id="info">Particles CGI - schooling → spiral → form heart</div>
+<button id="startBtn">Start</button>
+<div id="hint">Tip: nếu lag, chỉnh biến PARTICLES ở đầu file (giảm xuống 2000-4000).</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+<script>
+/*
+  Full demo:
+  - schooling (noise-driven)
+  - spiral ascent
+  - settle into 3D heart (many nested layers + vertical spine)
+  - point sprites with additive glow
+  - adjustable PARTICLES for performance
+*/
+
+/* ========== CONFIG ========== */
+const IS_MOBILE = /Android|webOS|iPhone|iPad|iPod|Opera Mini/i.test(navigator.userAgent);
+let PARTICLES = IS_MOBILE ? 3500 : 8000; // change here: 5000-10000 possible for strong desktop
+const SCHOOLING_TIME = 4.0;   // seconds of fish-like movement
+const SPIRAL_TIME   = 5.0;    // seconds of spiral ascent
+const FORM_TIME     = 6.0;    // seconds to settle into heart
+const TOTAL_TIME    = SCHOOLING_TIME + SPIRAL_TIME + FORM_TIME;
+const HEART_SCALE   = 7.0;    // size of final heart
+const CENTER = new THREE.Vector3(0,0,0);
+
+/* ========== UTIL: Simple Perlin-ish noise (ImprovedNoise) ========== */
+/* ImprovedNoise by Stefan Gustavson (adapted) */
+class ImprovedNoise {
+  constructor() {
+    this.p = new Uint8Array(512);
+    this.perm = new Uint8Array(512);
+    const permutation = [151,160,137,91,90,15,
+      131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,
+      8,99,37,240,21,10,23,190, 6,148,247,120,234,75,0,26,197,
+      62,94,252,219,203,117,35,11,32,57,177,33,88,237,149,56,
+      87,174,20,125,136,171,168, 68,175,74,165,71,134,139,48,
+      27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,
+      105,92,41,55,46,245,40,244,102,143,54, 65,25,63,161, 1,
+      216,80,73,209,76,132,187,208, 89,18,169,200,196,135,130,
+      116,188,159,86,164,100,109,198,173,186, 3,64,52,217,226,
+      250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,
+      59,227,47,16,58,17,182,189,28,42,223,183,170,213,119,248,
+      152, 2,44,154,163,70,221,153,101,155,167, 43,172,9,129,
+      22,39,253, 19,98,108,110,79,113,224,232,178,185, 112,104,
+      218,246,97,228,251,34,242,193,238,210,144,12,191,179,162,
+      241,81,51,145,235,249,14,239,107,49,192,214, 31,181,199,
+      106,157,184, 84,204,176,115,121,50,45,127, 4,150,254,138,
+      236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,
+      61,156,180];
+    for (let i=0;i<256;i++){ this.perm[i] = permutation[i]; this.perm[256+i]=permutation[i]; }
+  }
+  dot(g, x, y, z) { return g[0]*x + g[1]*y + g[2]*z; }
+  noise(x, y, z) {
+    const perm = this.perm;
+    let floorX = Math.floor(x), floorY = Math.floor(y), floorZ = Math.floor(z);
+    let X = floorX & 255, Y = floorY & 255, Z = floorZ & 255;
+    x -= floorX; y -= floorY; z -= floorZ;
+    const fx = (3 - 2*x)*x*x;
+    const fy = (3 - 2*y)*y*y;
+    const fz = (3 - 2*z)*z*z;
+    const A = perm[X]+Y, AA = perm[A]+Z, AB = perm[A+1]+Z;
+    const B = perm[X+1]+Y, BA = perm[B]+Z, BB = perm[B+1]+Z;
+
+    const grad = (hash, x, y, z) => {
+      const h = hash & 15;
+      const u = h<8 ? x : y;
+      const v = h<4 ? y : (h===12 || h===14 ? x : z);
+      return ((h&1)?-u:u) + ((h&2)?-v:v);
+    };
+
+    const lerp = (t,a,b) => a + t*(b - a);
+
+    const n000 = grad(perm[AA], x, y, z);
+    const n100 = grad(perm[BA], x-1, y, z);
+    const n010 = grad(perm[AB], x, y-1, z);
+    const n110 = grad(perm[BB], x-1, y-1, z);
+    const n001 = grad(perm[AA+1], x, y, z-1);
+    const n101 = grad(perm[BA+1], x-1, y, z-1);
+    const n011 = grad(perm[AB+1], x, y-1, z-1);
+    const n111 = grad(perm[BB+1], x-1, y-1, z-1);
+
+    const nx00 = lerp(fx, n000, n100);
+    const nx01 = lerp(fx, n001, n101);
+    const nx10 = lerp(fx, n010, n110);
+    const nx11 = lerp(fx, n011, n111);
+
+    const nxy0 = lerp(fy, nx00, nx10);
+    const nxy1 = lerp(fy, nx01, nx11);
+
+    return lerp(fz, nxy0, nxy1);
+  }
+}
+
+const noiseGen = new ImprovedNoise();
+
+/* ========== THREE init ========== */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x000000);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 1000);
+camera.position.set(0, 0, 45);
+
+/* create a soft circular sprite texture for points (glow) */
+function createSprite() {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+  grad.addColorStop(0, 'rgba(255,120,120,1)');
+  grad.addColorStop(0.2, 'rgba(255,50,50,0.9)');
+  grad.addColorStop(0.4, 'rgba(180,20,20,0.6)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,size,size);
+  const tx = new THREE.CanvasTexture(canvas);
+  tx.minFilter = THREE.LinearFilter;
+  tx.needsUpdate = true;
+  return tx;
+}
+const sprite = createSprite();
+
+/* ========== particle system buffers ========== */
+const geometry = new THREE.BufferGeometry();
+const positions = new Float32Array(PARTICLES * 3);
+const velocities = new Float32Array(PARTICLES * 3);
+const targetPos = new Float32Array(PARTICLES * 3);
+const basePos = new Float32Array(PARTICLES * 3); // initial positions for interpolation
+const layerFactor = new Float32Array(PARTICLES); // used for nested layers and random delay
+
+// helper: 2D heart param (returns {x,y})
+function heart2D(u) {
+  // classic cardioid-like param (suitable)
+  const x = 16 * Math.pow(Math.sin(u), 3);
+  const y = 13 * Math.cos(u) - 5 * Math.cos(2*u) - 2 * Math.cos(3*u) - Math.cos(4*u);
+  return { x: x / 16, y: y / 16 }; // normalize roughly
+}
+
+/* generate target heart points (with layers + thickness + vertical spine) */
+function generateTargets() {
+  const spineFraction = 0.06; // percent of particles as vertical spine
+  const layered = 5; // number of concentric heart layers (for that nested look)
+  let i = 0;
+  // main bulk: sample along heart param with layering & thickness
+  while (i < PARTICLES * (1 - spineFraction)) {
+    const u = Math.random() * Math.PI * 2;
+    const h = heart2D(u);
+    const layer = 1 + (Math.random() * layered); // 1..layered+1
+    // thickness (z) depends on vertical position to mimic 3D volume (top thicker)
+    const thickness = (0.3 + 0.7 * (1 - Math.abs(h.y))); // more thickness near top/outer
+    const z = (Math.random() - 0.5) * thickness;
+    const sx = h.x * HEART_SCALE * layer * (0.85 + Math.random()*0.3);
+    const sy = -h.y * HEART_SCALE * layer * (0.85 + Math.random()*0.3); // invert Y for visual
+    const sz = z * HEART_SCALE * (0.6 + Math.random()*0.6);
+    targetPos[i*3]   = sx;
+    targetPos[i*3+1] = sy;
+    targetPos[i*3+2] = sz;
+    layerFactor[i] = layer;
+    i++;
+  }
+  // spine: a vertical dense column at center to mimic the bright center line
+  const spineCount = Math.floor(PARTICLES * spineFraction);
+  for (let s = 0; s < spineCount && i < PARTICLES; s++, i++) {
+    const t = s / spineCount;
+    // create a vertical spike from bottom to near top of heart
+    const sx = (Math.random() - 0.5) * 0.06;
+    const sy = - (0.9 - t*1.8) * HEART_SCALE * (0.6 + 0.3 * Math.random()); // from bottom->top
+    const sz = (Math.random()-0.5) * 0.8;
+    targetPos[i*3]   = sx;
+    targetPos[i*3+1] = sy;
+    targetPos[i*3+2] = sz;
+    layerFactor[i] = 0.2 + Math.random()*0.8;
+  }
+}
+
+/* initialize positions (start from below in spiral-like distribution) */
+function initParticles() {
+  generateTargets();
+  for (let i = 0; i < PARTICLES; i++) {
+    // place start positions around a wide cylinder below view (so they spiral up)
+    const t = Math.random() * Math.PI * 2;
+    const r = 8 + Math.random() * 30;
+    const x = Math.cos(t) * r * (0.6 + Math.random()*0.8);
+    const y = -40 + Math.random() * 10; // start deep below
+    const z = Math.sin(t) * r * (0.6 + Math.random()*0.8);
+    positions[i*3] = x;
+    positions[i*3+1] = y;
+    positions[i*3+2] = z;
+    basePos[i*3] = x;
+    basePos[i*3+1] = y;
+    basePos[i*3+2] = z;
+    velocities[i*3]   = (Math.random()-0.5) * 0.02;
+    velocities[i*3+1] = (Math.random()-0.5) * 0.02;
+    velocities[i*3+2] = (Math.random()-0.5) * 0.02;
+  }
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
+}
+
+/* material: additive, sprite for glow */
+const material = new THREE.PointsMaterial({
+  size: IS_MOBILE ? 0.12 : 0.16,
+  map: sprite,
+  transparent: true,
+  alphaTest: 0.01,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+  vertexColors: false,
+  color: new THREE.Color(0xff2222)
+});
+
+const points = new THREE.Points(geometry, material);
+scene.add(points);
+
+/* init */
+initParticles();
+
+/* timing control */
+let startTime = null;
+let running = false;
+const startBtn = document.getElementById('startBtn');
+startBtn.addEventListener('click', () => {
+  startBtn.style.display = 'none';
+  start();
+});
+
+/* auto start after a small timeout, but allow manual if blocked */
+setTimeout(() => {
+  // auto start if not mobile (user probably wants demo)
+  if (!IS_MOBILE) { startBtn.click(); }
+}, 800);
+
+function start() {
+  if (running) return;
+  running = true;
+  startTime = performance.now();
+  animate();
+}
+
+/* easing helpers */
+const easeOutCubic = t => 1 - Math.pow(1-t, 3);
+const easeInOutQuad = t => t<0.5 ? 2*t*t : -1 + (4-2*t)*t;
+
+/* main loop */
+let last = performance.now();
+function animate(now) {
+  if (!running) return;
+  now = now || performance.now();
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  const elapsed = (now - startTime) / 1000;
+  // phase progress
+  const p0 = Math.min(1, elapsed / SCHOOLING_TIME);
+  const p1 = Math.max(0, Math.min(1, (elapsed - SCHOOLING_TIME) / SPIRAL_TIME));
+  const p2 = Math.max(0, Math.min(1, (elapsed - SCHOOLING_TIME - SPIRAL_TIME) / FORM_TIME));
+
+  // for each particle update
+  const posArr = geometry.attributes.position.array;
+  const tNow = elapsed;
+
+  // parameters
+  const noiseScale = 0.02;   // noise spatial scale for schooling
+  const noiseTimeScale = 0.6; // time speed of noise
+  const cohesion = 0.0005;   // small pull to center during schooling
+  const spiralTurns = 6.0;    // how many turns in spiral
+  const formationSpeed = 0.06 + (IS_MOBILE ? 0.02 : 0.06); // lerp rate towards target during formation
+
+  for (let i = 0; i < PARTICLES; i++) {
+    const ix = i*3, iy = i*3+1, iz = i*3+2;
+
+    // current
+    let x = posArr[ix], y = posArr[iy], z = posArr[iz];
+    let vx = velocities[ix], vy = velocities[iy], vz = velocities[iz];
+
+    // === Phase 0: schooling (noise-driven) ===
+    if (p0 < 1) {
+      // sample noise field
+      const n = noiseGen.noise(x*noiseScale, y*noiseScale, tNow*noiseTimeScale + i*0.0001);
+      const n2 = noiseGen.noise((x+1000)*noiseScale, (z+1000)*noiseScale, tNow*noiseTimeScale);
+      const ang = n * Math.PI * 2;
+      // desired velocity direction
+      const speed = 6.0 * (0.3 + (1 - p0) * 0.7); // gradually increase speed as schooling ends
+      const dx = Math.cos(ang) * speed * 0.03;
+      const dy = (Math.sin(n2 * Math.PI*2) * 0.8) * speed * 0.02;
+      const dz = Math.sin(ang * 1.3) * speed * 0.03;
+      // steer velocity towards desired
+      vx += (dx - vx) * 0.06;
+      vy += (dy - vy) * 0.06;
+      vz += (dz - vz) * 0.06;
+      // tiny cohesion to center so school doesn't drift away
+      vx += (CENTER.x - x) * cohesion;
+      vy += (CENTER.y - y) * cohesion;
+      vz += (CENTER.z - z) * cohesion;
+    }
+
+    // === Phase 1: spiral ascent ===
+    if (elapsed >= SCHOOLING_TIME && elapsed < SCHOOLING_TIME + SPIRAL_TIME) {
+      const localT = p1; // 0..1
+      // angle depend on particle index (so they form swirling bands)
+      const baseAngle = (i / PARTICLES) * Math.PI * 12;
+      // radius transition from initial radius to small radius near heart
+      const rx = x, rz = z;
+      let r0 = Math.sqrt(rx*rx + rz*rz) || 1.0;
+      const targetRadius = 2.5 + 5.0 * (Math.random()*0.1); // aim near heart radius
+      const spiralAngle = baseAngle + localT * spiralTurns * Math.PI * 2;
+      // compute spiral position around center while rising
+      const radius = r0 * (1 - easeInOutQuad(localT)) + targetRadius * easeInOutQuad(localT);
+      const sx = Math.cos(spiralAngle) * radius;
+      const sz = Math.sin(spiralAngle) * radius;
+      // target height moves from below up toward target y
+      const tgtY = targetPos[ix+1] || 0;
+      const sy = (basePos[iy]) * (1 - easeOutCubic(localT)) + (tgtY) * easeOutCubic(localT) + (1-localT)*8*(Math.random()-0.5);
+      // steer
+      vx += (sx - x) * 0.04;
+      vy += (sy - y) * 0.04;
+      vz += (sz - z) * 0.04;
+      // add noise swirl
+      const n = noiseGen.noise(x*0.03, y*0.03, tNow*0.6);
+      vx += (Math.cos(n*Math.PI*2) * 0.02);
+      vz += (Math.sin(n*Math.PI*2) * 0.02);
+    }
+
+    // === Phase 2: formation into heart ===
+    if (elapsed >= SCHOOLING_TIME + SPIRAL_TIME) {
+      const localT = p2; // 0..1
+      // move smoothly towards assigned targetPos
+      const tx = targetPos[ix], ty = targetPos[iy], tz = targetPos[iz];
+      // smooth approach - stronger as time goes on
+      const lerp = formationSpeed * (0.5 + localT*1.5);
+      vx += (tx - x) * lerp;
+      vy += (ty - y) * lerp;
+      vz += (tz - z) * lerp;
+      // reduce random jitter
+      vx *= (0.98 - localT*0.2);
+      vy *= (0.98 - localT*0.2);
+      vz *= (0.98 - localT*0.2);
+    }
+
+    // integrate velocity
+    x += vx * dt * 60;
+    y += vy * dt * 60;
+    z += vz * dt * 60;
+
+    // small bounds to avoid runaway
+    if (y > 50) y = 50;
+    if (y < -80) y = -80;
+
+    // write back
+    posArr[ix] = x;
+    posArr[iy] = y;
+    posArr[iz] = z;
+    velocities[ix] = vx;
+    velocities[iy] = vy;
+    velocities[iz] = vz;
+  } // end for particles
+
+  // after formation fully done, trigger pulse + slow rotation
+  if (p2 >= 1.0) {
+    const beat = 1 + 0.03 * Math.sin((elapsed - (SCHOOLING_TIME+SPIRAL_TIME)) * Math.PI * 1.8); // slow beat
+    points.scale.set(beat, beat, beat);
+    points.rotation.y += 0.0025;
+    points.rotation.x += 0.0012;
+  } else {
+    // gentle rotation during assembling
+    points.rotation.y += 0.002;
+  }
+
+  geometry.attributes.position.needsUpdate = true;
+  renderer.render(scene, camera);
+
+  // stop at end? keep animating (heart rotates & pulses). continue.
+  requestAnimationFrame(animate);
+}
+
+/* responsive */
+window.addEventListener('resize', () => {
+  const W = window.innerWidth, H = window.innerHeight;
+  renderer.setSize(W, H);
+  camera.aspect = W/H;
+  camera.updateProjectionMatrix();
+});
+</script>
+</body>
+</html>
