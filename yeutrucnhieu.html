@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Anh yêuu Trúc nhiều — Particle CGI</title>
+<style>
+  html,body{height:100%;margin:0;background:#000;overflow:hidden;font-family:system-ui,-apple-system,Segoe UI,Roboto;}
+  #ui { position: absolute; top:16px; left:16px; z-index:10; display:flex; gap:12px; align-items:center }
+  #btn { background:#ff3b6b; color:white; border:0; padding:12px 18px; border-radius:10px; font-weight:700; cursor:pointer; box-shadow:0 6px 18px rgba(255,56,107,0.16) }
+  #info { color:#ff8b9b; font-size:13px; opacity:0.9 }
+  #hint { position: absolute; bottom:12px; left:50%; transform:translateX(-50%); color:#ff9aa7; opacity:0.6; font-size:13px }
+</style>
+</head>
+<body>
+  <div id="ui">
+    <button id="btn">bấm vào đây nè Trúc yeuu 💖</button>
+    <div id="info">Click lần 1 → ngôi sao lớn → nổ → trái tim. Click lần 2 → chữ.</div>
+  </div>
+  <div id="hint">Nếu lag: giảm NUM trong code (line near top)</div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js"></script>
+
+<script>
+/*
+  Full single-file implementation:
+  - Instanced-like approach using BufferGeometry attributes (one draw call).
+  - Attributes: posA (stage1 small stars), posB (star big), posC (heart 3D), posD (text)
+  - Vertex shader mixes positions based on uniforms: uPhase, uExplode
+  - GSAP tweens uPhase to drive stage transitions and uExplode to create explosion effect.
+*/
+
+const NUM = 10000; // <-- nếu lag: giảm xuống 4000-6000
+const ASPECT = window.innerWidth / window.innerHeight;
+const RANGE = 120; // scene scale
+
+// Three setup
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 1000);
+camera.position.z = 180;
+
+// Buffer arrays
+const posA = new Float32Array(NUM * 3); // stage 1: many small 5-point stars across screen (local star point positions)
+const posB = new Float32Array(NUM * 3); // stage 2: giant star (one big 5-point star)
+const posC = new Float32Array(NUM * 3); // stage 3: heart 3D
+const posD = new Float32Array(NUM * 3); // stage 4: text positions
+
+// Utility: random range
+function rnd(min, max){ return Math.random()*(max-min)+min; }
+
+// ========== generate Stage1: many small 5-point stars spread across space ==========
+/*
+Strategy:
+- Create M star centers spread over screen area.
+- For each center, create K points sampled along a 5-point star polygon (arm lines).
+- Fill posA from these points until NUM reached.
+*/
+function generateSmallStars(num) {
+  const centers = Math.max(200, Math.floor(num / 12)); // number of small stars
+  const perStarAvg = Math.ceil(num / centers);
+  const out = [];
+  for (let c=0;c<centers && out.length < num;c++){
+    // center position random in a wide area (x: -R..R, y: -R..R, z small)
+    const cx = rnd(-RANGE*0.7, RANGE*0.7);
+    const cy = rnd(-RANGE*0.7, RANGE*0.7);
+    const cz = rnd(-8, 8);
+    // star params
+    const outer = rnd(3.5, 7.5);
+    const inner = outer * rnd(0.35, 0.55);
+    const rotation = rnd(0, Math.PI*2);
+    // sample points along 5-point star edges: create perStarAvg points
+    const pts = [];
+    for (let p=0; p<5; p++){
+      const a1 = rotation + p*(Math.PI*2/5);
+      const a2 = rotation + (p+0.5)*(Math.PI*2/5);
+      const ax = Math.cos(a1), ay = Math.sin(a1);
+      const bx = Math.cos(a2), by = Math.sin(a2);
+      // sample along outer->inner->outer
+      const samplesPerArm = Math.max(3, Math.floor(perStarAvg / 5));
+      for (let s=0; s<samplesPerArm; s++){
+        const t = s/(samplesPerArm-1||1);
+        // two segments: outer->inner and inner->nextOuter
+        const rx = ax*(1-t)*outer + bx*t*inner;
+        const ry = ay*(1-t)*outer + by*t*inner;
+        // add jitter and small random z for 3D feel
+        pts.push([cx + rx + rnd(-0.8,0.8), cy + ry + rnd(-0.8,0.8), cz + rnd(-1.6,1.6)]);
+        if (out.length + pts.length >= num) break;
+      }
+      if (out.length + pts.length >= num) break;
+    }
+    // add some center sparkle points
+    for (let s=0;s<2 && out.length + pts.length < num;s++){
+      pts.push([cx + rnd(-1.2,1.2), cy + rnd(-1.2,1.2), cz + rnd(-2,2)]);
+    }
+    // shuffle pts and push
+    for (let p of pts){
+      if (out.length >= num) break;
+      out.push(p);
+    }
+  }
+  // if not enough, fill random
+  while (out.length < num){
+    out.push([rnd(-RANGE, RANGE), rnd(-RANGE, RANGE), rnd(-10,10)]);
+  }
+  return out;
+}
+
+// ========== generate Stage2: one giant 5-point star in center ==========
+function generateGiantStar(num) {
+  // create many points distributed along a single large 5-point star polygon
+  const cx=0, cy=0, cz=0;
+  const outer = RANGE*0.9; // nearly full screen
+  const inner = outer * 0.45;
+  const rotation = -Math.PI/2;
+  const pts = [];
+  // sample along edges for detail
+  for (let p=0;p<5;p++){
+    const a1 = rotation + p*(Math.PI*2/5);
+    const a2 = rotation + (p+0.5)*(Math.PI*2/5);
+    const ax = Math.cos(a1), ay = Math.sin(a1);
+    const bx = Math.cos(a2), by = Math.sin(a2);
+    // sample outer->inner
+    const samples = Math.ceil(num / 40);
+    for (let s=0;s<samples;s++){
+      const t = s/(samples-1||1);
+      const rx = ax*(1-t)*outer + bx*t*inner;
+      const ry = ay*(1-t)*outer + by*t*inner;
+      pts.push([cx+rx + rnd(-6,6), cy+ry + rnd(-6,6), cz + rnd(-30,30)]);
+      if (pts.length >= num) break;
+    }
+    if (pts.length >= num) break;
+  }
+  // fill inside area lightly
+  while (pts.length < num){
+    // sample random barycentric-ish in bounding circle but ensure inside star area roughly
+    const ang = rnd(0, Math.PI*2);
+    const r = rnd(0, outer*0.8);
+    pts.push([cx + Math.cos(ang)*r + rnd(-6,6), cy + Math.sin(ang)*r + rnd(-6,6), rnd(-30,30)]);
+  }
+  return pts.slice(0, num);
+}
+
+// ========== generate Stage3: heart 3D ==========
+function generateHeart3D(num) {
+  // parametric 3D-ish distribution: sample t on heart curve and add thickness
+  const pts = [];
+  // use classic 2D heart param then add z thickness varied by y to simulate volume
+  for (let i=0;i<num;i++){
+    const t = Math.random()*Math.PI*2;
+    // 2D curve
+    const x2 = 16 * Math.pow(Math.sin(t), 3);
+    const y2 = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+    // scale and flip y for nice orientation
+    let x = x2 * 2.6; // tuned to match example
+    let y = -y2 * 2.6;
+    // give inside thinness and outside thicker
+    const dist = Math.sqrt(x*x + y*y);
+    const thickness = 1.0 + 1.6 * (1 - Math.exp(-dist*0.08));
+    // put more points near outline: accept/reject sampling
+    const pOutline = Math.pow(Math.min(1, dist/10), 0.8);
+    if (Math.random() < 0.65 + 0.35*pOutline) {
+      const z = rnd(-thickness*8, thickness*8);
+      // add some random jitter
+      pts.push([x + rnd(-6,6), y + rnd(-6,6), z + rnd(-6,6)]);
+    } else {
+      i--; // try again to keep density
+    }
+  }
+  return pts;
+}
+
+// ========== generate Stage4: text positions from canvas sampling ==========
+function generateTextPoints(text, num) {
+  // draw text onto offscreen canvas and sample pixels
+  const cw = 1200, ch = 300;
+  const canvas = document.createElement('canvas');
+  canvas.width = cw; canvas.height = ch;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'black';
+  ctx.fillRect(0,0,cw,ch);
+  // choose font size proportional
+  const fontSize = 120;
+  ctx.fillStyle = 'white';
+  ctx.font = `bold ${fontSize}px "Segoe UI", Arial`;
+  // center text
+  const metrics = ctx.measureText(text);
+  // center roughly
+  const tx = 60, ty = 220;
+  ctx.fillText(text, tx, ty);
+
+  const img = ctx.getImageData(0,0,cw,ch).data;
+  const coords = [];
+  // sample grid
+  const step = 6; // density
+  for (let y=0; y<ch; y+=step){
+    for (let x=0; x<cw; x+=step){
+      const alpha = img[(y*cw + x)*4 + 3];
+      if (alpha > 128){
+        // translate to center-origin and scale to scene
+        const sx = (x - cw/2) * (RANGE*1.2 / (cw/2));
+        const sy = (ch/2 - y) * (RANGE*0.5 / (ch/2));
+        coords.push([sx, sy, rnd(-6,6)]);
+      }
+    }
+  }
+  // if not enough, fill with minor jitter
+  while (coords.length < num){
+    coords.push([rnd(-RANGE*0.6,RANGE*0.6), rnd(-RANGE*0.25,RANGE*0.25), rnd(-6,6)]);
+  }
+  // pick exact num
+  return coords.slice(0, num);
+}
+
+// fill buffer arrays
+const smallStars = generateSmallStars(NUM);
+const giantStar = generateGiantStar(NUM);
+const heartPoints = generateHeart3D(NUM);
+const textPoints = generateTextPoints("Anh yêuu Trúc nhiều 💖", NUM);
+
+for (let i=0;i<NUM;i++){
+  posA[i*3]   = smallStars[i][0]; posA[i*3+1] = smallStars[i][1]; posA[i*3+2] = smallStars[i][2];
+  posB[i*3]   = giantStar[i][0]; posB[i*3+1] = giantStar[i][1]; posB[i*3+2] = giantStar[i][2];
+  posC[i*3]   = heartPoints[i][0]; posC[i*3+1] = heartPoints[i][1]; posC[i*3+2] = heartPoints[i][2];
+  posD[i*3]   = textPoints[i][0]; posD[i*3+1] = textPoints[i][1]; posD[i*3+2] = textPoints[i][2];
+}
+
+// BufferGeometry & attributes
+const geometry = new THREE.BufferGeometry();
+const baseArray = new Float32Array(NUM * 3); // dummy base positions (not used in shader except attributes as posA)
+geometry.setAttribute('position', new THREE.BufferAttribute(baseArray, 3)); // position is ignored; we compute in vertex shader
+geometry.setAttribute('aPosA', new THREE.BufferAttribute(posA, 3));
+geometry.setAttribute('aPosB', new THREE.BufferAttribute(posB, 3));
+geometry.setAttribute('aPosC', new THREE.BufferAttribute(posC, 3));
+geometry.setAttribute('aPosD', new THREE.BufferAttribute(posD, 3));
+
+// also color attribute for subtle variation
+const colors = new Float32Array(NUM * 3);
+for (let i=0;i<NUM;i++){
+  const v = 0.7 + Math.random()*0.3;
+  colors[i*3]=1.0; colors[i*3+1]=0.18*v; colors[i*3+2]=0.18*v;
+}
+geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+
+// a random seed per particle
+const rnds = new Float32Array(NUM);
+for (let i=0;i<NUM;i++) rnds[i]=Math.random();
+geometry.setAttribute('aRnd', new THREE.BufferAttribute(rnds, 1));
+
+// Shader material
+const material = new THREE.ShaderMaterial({
+  transparent: true,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  uniforms: {
+    uTime: { value: 0 },
+    uPhase: { value: 0 },   // 0: stage1; 0.5: giant star; 1: heart formed
+    uText: { value: 0 },    // 0: heart; 1: text
+    uExplode: { value: 0 }, // explosion intensity
+    uPointSize: { value: window.innerWidth > 800 ? 3.4 : 2.0 },
+    uScale: { value: 1.0 },
+    uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
+  },
+  vertexShader: `
+    attribute vec3 aPosA; // small stars
+    attribute vec3 aPosB; // giant star
+    attribute vec3 aPosC; // heart
+    attribute vec3 aPosD; // text
+    attribute vec3 aColor;
+    attribute float aRnd;
+
+    uniform float uTime;
+    uniform float uPhase; // 0..1 morph from A->B->C
+    uniform float uText;  // 0..1 morph to text
+    uniform float uExplode;
+    uniform float uPointSize;
+    uniform float uScale;
+    uniform float uPixelRatio;
+
+    varying vec3 vColor;
+    varying float vRnd;
+
+    // simple pseudo random
+    float hash(float n){ return fract(sin(n)*43758.5453123); }
+    // basic 3D curl-like noise (not high quality but ok)
+    float snoise(vec3 p){
+      return fract(sin(dot(p, vec3(12.9898,78.233,54.53))) * 43758.5453);
+    }
+
+    void main(){
+      // compute intermediate star (stage A->B)
+      vec3 pA = aPosA;
+      vec3 pB = aPosB;
+      vec3 pC = aPosC;
+      vec3 pD = aPosD;
+
+      // phase map: 0..0.45 => A -> B, 0.45..0.9 => B->C, >0.9 => C stable (then text via uText)
+      float phase = clamp(uPhase, 0.0, 1.0);
+
+      // first morph A->B over first half
+      float t1 = smoothstep(0.0, 0.45, phase);
+      // then B->C
+      float t2 = smoothstep(0.45, 0.9, phase);
+      // combine to get current base position (without explosion/text)
+      vec3 posAB = mix(pA, pB, t1);
+      vec3 posBC = mix(pB, pC, t2);
+
+      // choose which to blend: if phase <0.45 use posAB, else use posBC
+      vec3 basePos = mix(posAB, posBC, smoothstep(0.45, 0.46, phase));
+
+      // explosion displacement (when uExplode>0)
+      float rnd = aRnd;
+      // spherical outward burst based on rnd and uExplode
+      vec3 dir = normalize(vec3(
+        cos(rnd*12.9898 + uTime*0.2),
+        sin(rnd*78.233 + uTime*0.3),
+        sin(rnd*37.719 + uTime*0.25)
+      ) + 0.0001);
+      float burst = pow(uExplode, 1.0);
+      vec3 explodeDis = dir * burst * (20.0 + rnd*160.0);
+
+      // add small schooling noise when in stage A (subtle motion)
+      float n = snoise(basePos*0.03 + vec3(uTime*0.05, uTime*0.04, uTime*0.03));
+      vec3 jitter = vec3(
+        (fract(sin(dot(basePos.xy, vec2(12.9898,78.233))) * 43758.5453) - 0.5),
+        (fract(sin(dot(basePos.xz, vec2(93.9898,15.233))) * 34658.5453) - 0.5),
+        (fract(sin(dot(basePos.yz, vec2(63.9898,45.233))) * 24658.5453) - 0.5)
+      ) * (1.0 - clamp(phase*2.0, 0.0, 1.0)) * 4.0;
+
+      vec3 finalPos = basePos * uScale + jitter + explodeDis * uExplode;
+
+      // if text morph active, blend to text positions pD
+      finalPos = mix(finalPos, pD, uText);
+
+      // model-view-proj
+      vec4 mvPosition = modelViewMatrix * vec4(finalPos, 1.0);
+      gl_Position = projectionMatrix * mvPosition;
+
+      // attenuate size by distance
+      float size = uPointSize * (1.0 + 0.6 * aRnd) * (200.0 / (-mvPosition.z + 200.0));
+      size = max(size, 0.8);
+      gl_PointSize = size * uPixelRatio;
+
+      // color
+      vColor = aColor;
+      vRnd = aRnd;
+    }
+  `,
+  fragmentShader: `
+    varying vec3 vColor;
+    varying float vRnd;
+    void main(){
+      // soft round point
+      vec2 uv = gl_PointCoord - 0.5;
+      float d = length(uv);
+      float alpha = smoothstep(0.48, 0.2, d);
+      // glow rim
+      float glow = pow(1.0 - d, 2.0);
+      vec3 col = vColor;
+      gl_FragColor = vec4(col * (0.5 + 0.8*glow), alpha * (0.7 + 0.3*vRnd));
+    }
+  `
+});
+
+const points = new THREE.Points(geometry, material);
+scene.add(points);
+
+// initial uniform values
+material.uniforms.uTime.value = 0;
+material.uniforms.uPhase.value = 0;
+material.uniforms.uExplode.value = 0;
+material.uniforms.uText.value = 0;
+
+// Animation loop
+let lastTime = performance.now();
+function render(){
+  requestAnimationFrame(render);
+  const now = performance.now();
+  const dt = (now - lastTime) * 0.001;
+  lastTime = now;
+  material.uniforms.uTime.value += dt;
+  // gentle rotation when heart formed
+  const phase = material.uniforms.uPhase.value;
+  if (phase > 0.9) {
+    points.rotation.y += 0.003;
+    points.rotation.x = Math.sin(material.uniforms.uTime.value * 0.2) * 0.06;
+  } else {
+    points.rotation.y += 0.0015;
+  }
+  renderer.render(scene, camera);
+}
+render();
+
+// ------- Control logic (click cycles) -------
+let clickStage = 0; // 0 initial (stars), after first click -> starLarge->explode->heart, clickStage 1 -> to text, clickStage 2 -> reset maybe
+
+const btn = document.getElementById('btn');
+btn.addEventListener('click', () => {
+  if (clickStage === 0) {
+    // Stage: A -> B then explode then to heart
+    // 1) Morph A->B (uPhase: 0 -> 0.45)
+    gsap.to(material.uniforms.uPhase, { value: 0.46, duration: 1.0, ease: "power2.inOut" });
+    // 2) Brief pause then explode (=1) for dramatic, then calm explode->0 while morphing to heart (phase -> 0.95)
+    setTimeout(()=>{
+      gsap.to(material.uniforms.uExplode, { value: 1.0, duration: 0.45, ease: "power3.out" });
+      // after explosion outward, quickly move uPhase to heart formation zone and reduce explode
+      setTimeout(()=>{
+        gsap.to(material.uniforms.uPhase, { value: 0.96, duration: 1.4, ease: "power2.out" });
+        gsap.to(material.uniforms.uExplode, { value: 0.0, duration: 1.0, ease: "power2.in" });
+      }, 450);
+    }, 1000);
+    clickStage = 1;
+    btn.textContent = "bấm lần 2 để thành chữ 💌";
+  } else if (clickStage === 1) {
+    // Stage: heart -> explode -> text
+    // 1) small pulse & outward burst
+    gsap.to(material.uniforms.uExplode, { value: 1.0, duration: 0.5, ease: "power3.out" });
+    // 2) then morph to text (uText 0 -> 1) while reducing explode
+    setTimeout(()=>{
+      gsap.to(material.uniforms.uExplode, { value: 0.0, duration: 1.2, ease: "power2.in" });
+      gsap.to(material.uniforms.uText, { value: 1.0, duration: 1.6, ease: "power2.out" });
+    }, 500);
+    clickStage = 2;
+    btn.textContent = "Nhấn để chơi lại";
+  } else {
+    // reset to initial stars
+    gsap.to(material.uniforms.uText, { value: 0.0, duration: 0.9, ease: "power2.in" });
+    gsap.to(material.uniforms.uPhase, { value: 0.0, duration: 1.4, ease: "power2.inOut" });
+    gsap.to(material.uniforms.uExplode, { value: 0.0, duration: 0.6 });
+    clickStage = 0;
+    btn.textContent = "bấm vào đây nè Trúc yeuu 💖";
+  }
+});
+
+// responsive
+window.addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  material.uniforms.uPointSize.value = window.innerWidth > 800 ? 3.4 : 2.0;
+  material.uniforms.uPixelRatio.value = Math.min(window.devicePixelRatio, 2);
+});
+
+// initial mild morph so small stars 'settle'
+gsap.to(material.uniforms.uPhase, { value: 0.06, duration: 1.6, ease: "sine.out" });
+</script>
+</body>
+</html>
