@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Heart Particles</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: black; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+<script>
+  let scene = new THREE.Scene();
+  let camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+  let renderer = new THREE.WebGLRenderer({antialias: true});
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  // Tạo geometry particles
+  let particles = 15000; // ông có thể tăng lên 10000
+  let geometry = new THREE.BufferGeometry();
+  let positions = [];
+  let heartShape = [];
+
+  // Công thức tim 2D (hàm toán học)
+  for (let t = 0; t < Math.PI * 2; t += 0.001) {
+    let x = 16 * Math.pow(Math.sin(t), 3);
+    let y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+    heartShape.push({x: x/16, y: -y/16}); // scale nhỏ lại
+  }
+
+  for (let i = 0; i < particles; i++) {
+    let p = heartShape[Math.floor(Math.random() * heartShape.length)];
+    let x = p.x + (Math.random()-0.5) * 0.5;
+    let y = p.y + (Math.random()-0.5) * 0.5;
+    let z = (Math.random()-0.5) * 0.5;
+    positions.push(x*10, y*10, z*10);
+  }
+
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+  // Vật liệu hạt
+  let material = new THREE.PointsMaterial({ color: 0xff2222, size: 0.05 });
+  let points = new THREE.Points(geometry, material);
+  scene.add(points);
+
+  camera.position.z = 20;
+
+  function animate() {
+    requestAnimationFrame(animate);
+    points.rotation.y += 0.002; // xoay vòng
+    points.rotation.x += 0.001;
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+</script>
+</body>
+</html>
