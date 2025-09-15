@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Puzzle Chữ - Thanh Trúc</title>
+<style>
+  :root{
+    --cols:5;
+    --rows:4;
+    --gap:8px;
+    --tile-size:88px;
+    --bg1:#111827;
+    --accent:#ff4d6d;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,#0f1724,#11121a);font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial;color:#fff}
+  .wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:18px}
+  h1{margin:0;font-weight:700;letter-spacing:0.6px;font-size:20px;color:#ffdce1;text-shadow:0 6px 18px rgba(0,0,0,0.6)}
+  #ui{display:flex;gap:12px;align-items:center}
+  button{appearance:none;border:0;padding:12px 18px;border-radius:12px;background:linear-gradient(180deg,var(--accent),#ff2a57);color:white;font-weight:700;cursor:pointer;box-shadow:0 8px 30px rgba(255,45,80,0.12)}
+  #container{
+    position:relative;
+    width: calc(var(--cols) * var(--tile-size) + (var(--cols) - 1) * var(--gap));
+    height: calc(var(--rows) * var(--tile-size) + (var(--rows) - 1) * var(--gap));
+    background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border-radius:16px;
+    padding:10px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
+    overflow:visible;
+  }
+  .tile {
+    position:absolute;
+    width:var(--tile-size);
+    height:var(--tile-size);
+    border-radius:10px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    user-select:none;
+    cursor:pointer;
+    transition: transform 220ms cubic-bezier(.2,.9,.2,1), left 220ms cubic-bezier(.2,.9,.2,1), top 220ms cubic-bezier(.2,.9,.2,1), box-shadow 200ms;
+    background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+    box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+    font-weight:800;
+    color: #ff2a57;
+    font-size: clamp(20px, 3.2vw, 28px);
+    letter-spacing: 1px;
+  }
+  .tile:hover{transform:translateY(-6px) scale(1.035);box-shadow:0 14px 34px rgba(0,0,0,0.6)}
+  .empty{background:transparent;box-shadow:none;cursor:default}
+  #controls{display:flex;gap:8px;align-items:center}
+  @media (max-width:700px){
+    :root{--tile-size:64px}
+    .wrap{padding:14px}
+    h1{font-size:18px}
+  }
+  /* subtle win overlay */
+  #win {
+    position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:40;
+    background:linear-gradient(180deg, rgba(0,0,0,0.45), rgba(0,0,0,0.65));
+    color:white;font-size:22px;font-weight:800;backdrop-filter: blur(4px);
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Game Xếp Chữ</h1>
+    <div id="ui">
+      <div id="controls">
+        <button id="switchBtn">Đổi chữ</button>
+        <button id="shuffleBtn">Xáo trộn</button>
+      </div>
+    </div>
+    <div id="container"></div>
+  </div>
+
+  <div id="win">Hoàn thành! 💖</div>
+
+<script>
+(() => {
+  const container = document.getElementById('container');
+  const switchBtn = document.getElementById('switchBtn');
+  const shuffleBtn = document.getElementById('shuffleBtn');
+  const winEl = document.getElementById('win');
+
+  const COLS = 5, ROWS = 4, SIZE = COLS * ROWS; // 20
+  const EMPTY_INDEX = SIZE - 1;
+  let tileSize = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--tile-size')) || 88;
+  const GAP = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--gap')) || 8;
+
+  // two phrases (spaces allowed) - letters concatenated
+  const phrases = [
+    "THANH TRUC LI NGU NGOAN",
+    "ANH YEU THANH TRUC NHIEU"
+  ];
+  let current = 0;
+
+  let board = new Array(SIZE).fill(null); // each cell: {letter, el} or null for empty
+
+  function normalizeLetters(text){
+    const letters = text.replace(/\s+/g,'').toUpperCase().split('');
+    // ensure at least SIZE-1 letters
+    while(letters.length < SIZE-1) letters.push(' ');
+    // if too long keep first SIZE-1
+    return letters.slice(0, SIZE-1);
+  }
+
+  function resizeVariables(){
+    // recalc tileSize from CSS var
+    tileSize = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--tile-size')) || tileSize;
+    // update container size style for responsive small screens
+    container.style.width = `calc(${COLS} * ${tileSize}px + ${(COLS-1)*GAP}px)`;
+    container.style.height = `calc(${ROWS} * ${tileSize}px + ${(ROWS-1)*GAP}px)`;
+  }
+
+  window.addEventListener('resize', () => {
+    resizeVariables();
+    // reposition tiles
+    for (let i = 0; i < SIZE; i++){
+      const cell = board[i];
+      if (cell && cell.el) setTilePosition(cell.el, i, true);
+    }
+  });
+
+  function setTilePosition(el, index, instant=false){
+    const col = index % COLS;
+    const row = Math.floor(index / COLS);
+    const left = col * (tileSize + GAP);
+    const top = row * (tileSize + GAP);
+    if (instant) {
+      el.style.transition = 'none';
+      el.style.left = left + 'px';
+      el.style.top = top + 'px';
+      // force reflow then restore transition
+      void el.offsetWidth;
+      el.style.transition = '';
+    } else {
+      el.style.left = left + 'px';
+      el.style.top = top + 'px';
+    }
+  }
+
+  function createTile(letter, index){
+    const el = document.createElement('div');
+    el.className = 'tile';
+    el.textContent = letter;
+    el.style.width = tileSize + 'px';
+    el.style.height = tileSize + 'px';
+    el.addEventListener('click', () => clickTile(el));
+    setTilePosition(el, index, true);
+    return el;
+  }
+
+  function initBoardForText(text){
+    const letters = normalizeLetters(text);
+    // clear container
+    container.innerHTML = '';
+    board = new Array(SIZE).fill(null);
+    // create tiles in solved order (last cell empty)
+    for (let i = 0; i < SIZE; i++){
+      if (i === EMPTY_INDEX) {
+        board[i] = null;
+        continue;
+      }
+      const letter = letters[i] || ' ';
+      const el = createTile(letter, i);
+      board[i] = { letter, el };
+      container.appendChild(el);
+    }
+
+    resizeVariables();
+    // place empty placeholder area (visual gap)
+    // shuffle with legal moves
+    scramble(250);
+    renderBoard();
+    hideWin();
+  }
+
+  function renderBoard(){
+    // ensure DOM order not important because absolute positioned
+    // ensure all tiles appended so z-order ok
+    container.innerHTML = '';
+    for (let i=0;i<SIZE;i++){
+      if (board[i] && board[i].el) container.appendChild(board[i].el);
+    }
+  }
+
+  function getNeighbors(index){
+    const neighbors = [];
+    const col = index % COLS;
+    const row = Math.floor(index / COLS);
+    if (col > 0) neighbors.push(index - 1);
+    if (col < COLS - 1) neighbors.push(index + 1);
+    if (row > 0) neighbors.push(index - COLS);
+    if (row < ROWS - 1) neighbors.push(index + COLS);
+    return neighbors;
+  }
+
+  function swapPositions(i, j, animate=true){
+    const a = board[i];
+    const b = board[j];
+    board[j] = a;
+    board[i] = b;
+    // update element positions
+    if (board[j] && board[j].el) setTilePosition(board[j].el, j, !animate);
+    if (board[i] && board[i].el) setTilePosition(board[i].el, i, !animate);
+    // after move check win
+    if (animate) {
+      setTimeout(()=> {
+        checkWin();
+      }, 220);
+    } else {
+      checkWin();
+    }
+  }
+
+  function clickTile(el){
+    // find index of element in board
+    const idx = board.findIndex(cell => cell && cell.el === el);
+    if (idx === -1) return;
+    const neighbors = getNeighbors(idx);
+    if (neighbors.includes(getEmptyIndex())){
+      const emptyIdx = getEmptyIndex();
+      swapPositions(idx, emptyIdx, true);
+      renderBoard();
+    }
+  }
+
+  function getEmptyIndex(){
+    return board.findIndex(cell => cell === null);
+  }
+
+  function scramble(moves = 200){
+    // perform legal random moves from solved state to ensure solvable
+    let empty = EMPTY_INDEX;
+    let lastSwap = -1;
+    for (let i=0;i<moves;i++){
+      const nbs = getNeighbors(empty).filter(n => n !== lastSwap);
+      const choice = nbs[Math.floor(Math.random() * nbs.length)];
+      // swap empty <-> choice
+      board[empty] = board[choice];
+      board[choice] = null;
+      // move tile DOM element visually
+      if (board[empty] && board[empty].el) setTilePosition(board[empty].el, empty, true);
+      lastSwap = empty;
+      empty = choice;
+    }
+    // ensure small animation smoothing
+    for (let k=0;k<SIZE;k++){
+      if (board[k] && board[k].el) {
+        // briefly reset transition then set to normal
+        board[k].el.style.transition = '';
+        setTilePosition(board[k].el, k, false);
+      }
+    }
+    renderBoard();
+  }
+
+  function checkWin(){
+    // check solved: board[0..EMPTY_INDEX-1] letters in original order and empty at last
+    const letters = normalizeLetters(phrases[current]);
+    for (let i=0;i<SIZE-1;i++){
+      const cell = board[i];
+      const expected = letters[i] || ' ';
+      if (!cell || cell.letter !== expected) return false;
+    }
+    if (board[EMPTY_INDEX] !== null) return false;
+    showWin();
+    return true;
+  }
+
+  function showWin(){
+    winEl.style.display = 'flex';
+    setTimeout(()=> winEl.style.display = 'none', 1600);
+  }
+
+  function hideWin(){ winEl.style.display = 'none'; }
+
+  // button behaviors
+  switchBtn.addEventListener('click', () => {
+    current = (current + 1) % phrases.length;
+    initBoardForText(phrases[current]);
+  });
+
+  shuffleBtn.addEventListener('click', () => {
+    scramble(220 + Math.floor(Math.random()*120));
+  });
+
+  // init
+  initBoardForText(phrases[current]);
+
+})();
+</script>
+</body>
+</html>
