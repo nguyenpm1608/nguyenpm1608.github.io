@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Puzzle Trúc Yêu</title>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      background: linear-gradient(135deg, #fbc2eb, #a6c1ee);
+      font-family: "Segoe UI", sans-serif;
+    }
+    h1 {
+      color: #fff;
+      font-size: 28px;
+      margin-bottom: 15px;
+      text-shadow: 0 2px 5px rgba(0,0,0,0.4);
+    }
+    #puzzle {
+      display: grid;
+      grid-template-columns: repeat(5, 80px);
+      grid-template-rows: repeat(4, 80px);
+      gap: 4px;
+      background: #333;
+      padding: 6px;
+      border-radius: 12px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+    }
+    .tile {
+      width: 80px;
+      height: 80px;
+      background: #fff;
+      color: #ff4d6d;
+      font-size: 24px;
+      font-weight: bold;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+    .tile:hover {
+      background: #ffe6ec;
+      transform: scale(1.05);
+    }
+    #controls {
+      margin-top: 20px;
+    }
+    button {
+      padding: 12px 22px;
+      font-size: 16px;
+      border: none;
+      border-radius: 10px;
+      background: #ff4d6d;
+      color: white;
+      cursor: pointer;
+      transition: 0.3s;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    button:hover {
+      background: #e63950;
+    }
+  </style>
+</head>
+<body>
+  <h1>Game Xếp Chữ Trúc Yêu ❤️</h1>
+  <div id="puzzle"></div>
+  <div id="controls">
+    <button id="switchBtn">Đổi chữ</button>
+  </div>
+
+  <script>
+    const puzzle = document.getElementById("puzzle");
+    const switchBtn = document.getElementById("switchBtn");
+
+    const texts = [
+      "THANH TRUC LI NGU NGOAN",
+      "ANH YEU THANH TRUC NHIEU"
+    ];
+
+    let currentText = 0;
+    let tiles = [];
+    let emptyIndex;
+
+    function initPuzzle(text) {
+      puzzle.innerHTML = "";
+      tiles = [];
+
+      let letters = text.replace(/ /g, "").split("");
+      let size = 20; // 4x5 = 20
+      emptyIndex = size - 1;
+
+      for (let i = 0; i < size; i++) {
+        if (i === emptyIndex) {
+          tiles.push(null);
+          continue;
+        }
+        const tile = document.createElement("div");
+        tile.className = "tile";
+        tile.textContent = letters[i] || "";
+        tile.addEventListener("click", () => moveTile(i));
+        tiles.push(tile);
+        puzzle.appendChild(tile);
+      }
+      updateGrid();
+    }
+
+    function updateGrid() {
+      puzzle.innerHTML = "";
+      for (let i = 0; i < tiles.length; i++) {
+        if (tiles[i]) puzzle.appendChild(tiles[i]);
+        else {
+          const empty = document.createElement("div");
+          empty.style.width = "80px";
+          empty.style.height = "80px";
+          puzzle.appendChild(empty);
+        }
+      }
+    }
+
+    function moveTile(i) {
+      const neighbors = [i - 1, i + 1, i - 5, i + 5];
+      if (neighbors.includes(emptyIndex)) {
+        tiles[emptyIndex] = tiles[i];
+        tiles[i] = null;
+        emptyIndex = i;
+        updateGrid();
+      }
+    }
+
+    switchBtn.addEventListener("click", () => {
+      currentText = (currentText + 1) % texts.length;
+      initPuzzle(texts[currentText]);
+    });
+
+    initPuzzle(texts[currentText]);
+  </script>
+</body>
+</html>
