@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>BlockBlast — Thanh Trúc Edition</title>
+<style>
+  :root{
+    --bg1: #071021;
+    --card: rgba(255,255,255,0.04);
+    --accent: #ff4d6d;
+    --accent-2: #ff8aa0;
+    --glass: rgba(255,255,255,0.03);
+    --tile-size: 48px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg1),#081320);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;color:#fff}
+  .wrap{min-height:100%;display:flex;gap:28px;align-items:flex-start;justify-content:center;padding:28px}
+  .left, .right{border-radius:14px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));backdrop-filter: blur(6px);box-shadow: 0 10px 40px rgba(0,0,0,0.6)}
+  .left{padding:18px;}
+  .right{padding:18px;width:320px}
+  h1{margin:0 0 12px 0;font-size:20px;letter-spacing:0.2px}
+  /* board */
+  #boardWrap{padding:12px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:12px}
+  #board{
+    display:grid;
+    grid-template-columns: repeat(9, var(--tile-size));
+    grid-template-rows: repeat(9, var(--tile-size));
+    gap:6px;
+    padding:6px;
+    background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005));
+    border-radius:10px;
+  }
+  .cell{
+    width:var(--tile-size);height:var(--tile-size);
+    background:rgba(255,255,255,0.015);
+    border-radius:8px;
+    display:flex;align-items:center;justify-content:center;
+    transition: background 150ms, transform 120ms;
+    position:relative;
+  }
+  .cell.occupied{background: linear-gradient(180deg, rgba(255,90,120,0.12), rgba(255,60,100,0.08)); box-shadow: 0 6px 18px rgba(255,20,80,0.06) inset}
+  .cell.hover-ok{outline: 2px solid rgba(0,255,128,0.12); transform: translateY(-2px)}
+  .cell.hover-bad{outline: 2px solid rgba(255,20,20,0.08); transform: translateY(-2px)}
+  /* piece preview area */
+  .pieceRow{display:flex;gap:10px;align-items:center;margin-top:14px}
+  .pieceCard{width:120px;background:var(--glass);padding:8px;border-radius:10px;display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center;position:relative}
+  .pieceShape{display:grid;gap:4px}
+  .miniCell{width:18px;height:18px;border-radius:4px;background:rgba(255,255,255,0.06)}
+  .miniCell.on{background:linear-gradient(180deg,var(--accent),var(--accent-2));box-shadow:0 6px 18px rgba(255,60,100,0.16) inset}
+  .pieceName{font-weight:700;color:var(--accent);font-size:13px;line-height:1}
+  .btnPrimary{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;background:linear-gradient(90deg,var(--accent),var(--accent-2));border:0;color:white;font-weight:700;cursor:pointer;box-shadow:0 10px 30px rgba(255,80,120,0.12)}
+  .ghost{text-align:center;color:#ffd7df;font-size:13px;opacity:0.85}
+  .scoreBox{display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:10px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));}
+  .statRow{display:flex;justify-content:space-between;gap:10px;align-items:center;font-weight:700}
+  .small{font-size:12px;opacity:0.8}
+  .controls{display:flex;gap:8px;margin-top:12px}
+  .secondary{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:8px 10px;border-radius:10px;color:#ffd6dd;cursor:pointer}
+  footer{position:fixed;left:18px;bottom:18px;color:#fff;opacity:0.06;font-size:12px}
+  /* responsive */
+  @media (max-width:900px){
+    .wrap{flex-direction:column;align-items:center;padding:14px}
+    .right{width:100%}
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="left">
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 18px 6px 18px">
+      <div style="width:14px;height:14px;border-radius:4px;background:linear-gradient(180deg,var(--accent),var(--accent-2))"></div>
+      <div>
+        <div style="font-weight:800;color:#ffdede">BlockBlast — Thanh Trúc</div>
+        <div style="font-size:12px;color:#ffdede;opacity:0.8">Xếp khối để tạo chữ | Click chọn mảnh → click vào lưới để đặt</div>
+      </div>
+    </div>
+
+    <div id="boardWrap" style="padding:14px">
+      <div id="board"></div>
+
+      <div class="pieceRow" id="pieceRow" style="justify-content:center"></div>
+      <div style="display:flex;justify-content:center;margin-top:12px">
+        <button class="secondary" id="resetBtn">Reset</button>
+        <button class="secondary" id="hintBtn">Gợi ý</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="right">
+    <div style="padding:18px">
+      <h1>Thông tin</h1>
+      <div class="scoreBox">
+        <div class="statRow"><div class="small">Điểm</div><div id="score" style="font-size:20px">0</div></div>
+        <div class="statRow"><div class="small">Mảnh hiện tại</div><div id="piecesLeft">3</div></div>
+        <div class="statRow"><div class="small">Tên mảnh (ví dụ)</div><div id="curName" class="ghost">—</div></div>
+      </div>
+
+      <div style="margin-top:14px">
+        <div style="font-weight:800;margin-bottom:8px">Hành động</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button id="shufflePieces" class="btnPrimary">Xáo Mảnh</button>
+          <button id="swapWords" class="secondary">Đổi sang "ANH YEU..."</button>
+        </div>
+      </div>
+
+      <div style="margin-top:14px">
+        <div style="font-weight:800;margin-bottom:8px">Ghi chú</div>
+        <div style="font-size:13px;color:#ffd7df;opacity:0.85">Mảnh ghép có nhãn ngẫu nhiên: "Nguyên", "Trúc", "Linh", "Thanh", "An". Bạn có thể đặt bằng cách click chọn mảnh rồi click ô muốn đặt.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>Designed for Thanh Trúc — BlockBlast</footer>
+
+<script>
+/* BlockBlast Web (single-file)
+  - Grid 9x9
+  - Pieces pool of 3 shapes at a time
+  - Piece labels random from list
+  - Click to select piece; click grid cell to attempt placement; preview hover shows valid/invalid
+  - Clear full rows/cols -> score
+  - Modern UI, responsive
+*/
+
+const COLS = 9, ROWS = 9;
+const NUM_CELLS = COLS * ROWS;
+const boardEl = document.getElementById('board');
+const pieceRow = document.getElementById('pieceRow');
+const scoreEl = document.getElementById('score');
+const piecesLeftEl = document.getElementById('piecesLeft');
+const curNameEl = document.getElementById('curName');
+
+let score = 0;
+let grid = new Array(NUM_CELLS).fill(0); // 0 empty; >0 occupied with id
+let cellEls = [];
+let pieces = []; // current piece objects
+let selectedPieceIndex = -1;
+let pieceIdCounter = 1;
+const NAMES = ["Nguyên","Trúc","Linh","Thanh","An","Minh","Vy","Hà","Ly","Duy"];
+
+const SHAPES = [
+  // single
+  {w:1,h:1,cells:[[0,0]]},
+  // small line
+  {w:1,h:3,cells:[[0,0],[0,1],[0,2]]},
+  {w:3,h:1,cells:[[0,0],[1,0],[2,0]]},
+  // 2x2
+  {w:2,h:2,cells:[[0,0],[1,0],[0,1],[1,1]]},
+  // L shapes
+  {w:2,h:3,cells:[[0,0],[0,1],[0,2],[1,2]]},
+  {w:3,h:2,cells:[[0,0],[1,0],[2,0],[0,1]]},
+  // T
+  {w:3,h:2,cells:[[0,0],[1,0],[2,0],[1,1]]},
+  // long
+  {w:1,h:5,cells:[[0,0],[0,1],[0,2],[0,3],[0,4]]},
+  {w:5,h:1,cells:[[0,0],[1,0],[2,0],[3,0],[4,0]]},
+  // Z
+  {w:3,h:2,cells:[[0,0],[1,0],[1,1],[2,1]]},
+  // plus
+  {w:3,h:3,cells:[[1,0],[1,1],[1,2],[0,1],[2,1]]},
+  // bigger L
+  {w:2,h:4,cells:[[0,0],[0,1],[0,2],[0,3],[1,3]]}
+];
+
+// make board cells
+function buildBoard(){
+  boardEl.style.gridTemplateColumns = `repeat(${COLS}, var(--tile-size))`;
+  boardEl.style.gridTemplateRows = `repeat(${ROWS}, var(--tile-size))`;
+  boardEl.innerHTML = '';
+  cellEls = [];
+  for(let r=0;r<ROWS;r++){
+    for(let c=0;c<COLS;c++){
+      const idx = r*COLS + c;
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.idx = idx;
+      cell.addEventListener('mouseenter', onCellHover);
+      cell.addEventListener('mouseleave', onCellOut);
+      cell.addEventListener('click', onCellClick);
+      boardEl.appendChild(cell);
+      cellEls.push(cell);
+    }
+  }
+}
+
+// Piece generation
+function randShape(){
+  return JSON.parse(JSON.stringify(SHAPES[Math.floor(Math.random()*SHAPES.length)]));
+}
+function randName(){ return NAMES[Math.floor(Math.random()*NAMES.length)]; }
+
+// create a piece object
+function makePiece(){
+  const shape = randShape();
+  // randomly maybe rotate 90 degrees (swap w/h and rotate cells)
+  if (Math.random() < 0.5){
+    const newCells = [];
+    for(const c of shape.cells) newCells.push([c[1], shape.w - 1 - c[0]]);
+    shape.cells = newCells;
+    const tmp = shape.w; shape.w = shape.h; shape.h = tmp;
+  }
+  return {
+    id: pieceIdCounter++,
+    w: shape.w,
+    h: shape.h,
+    cells: shape.cells, // array of [x,y] with 0,0 origin
+    name: randName()
+  };
+}
+
+// render pieces in pool
+function renderPieces(){
+  pieceRow.innerHTML = '';
+  pieces.forEach((p, i) => {
+    const card = document.createElement('div');
+    card.className = 'pieceCard';
+    card.style.width = '128px';
+    card.style.padding = '8px';
+    // mini grid
+    const size = Math.max(p.w, p.h);
+    const gridEl = document.createElement('div');
+    gridEl.className = 'pieceShape';
+    gridEl.style.gridTemplateColumns = `repeat(${size}, 16px)`;
+    // create cells
+    for(let y=0;y<size;y++){
+      for(let x=0;x<size;x++){
+        const mc = document.createElement('div');
+        mc.className = 'miniCell';
+        // if this coordinate exists in p.cells mark on
+        if (p.cells.some(k => k[0]===x && k[1]===y)){
+          mc.classList.add('on');
+        }
+        gridEl.appendChild(mc);
+      }
+    }
+    const nameEl = document.createElement('div');
+    nameEl.className = 'pieceName';
+    nameEl.textContent = p.name;
+    const btn = document.createElement('button');
+    btn.className = 'secondary';
+    btn.textContent = (selectedPieceIndex===i ? 'Đang chọn' : 'Chọn');
+    btn.addEventListener('click', ()=> selectPiece(i));
+    // clicking card also selects
+    card.addEventListener('click', ()=> selectPiece(i));
+    card.appendChild(gridEl);
+    card.appendChild(nameEl);
+    card.appendChild(btn);
+    pieceRow.appendChild(card);
+  });
+  piecesLeftEl.textContent = pieces.length;
+  curNameEl.textContent = selectedPieceIndex>=0 && pieces[selectedPieceIndex] ? pieces[selectedPieceIndex].name : '—';
+}
+
+// select piece
+function selectPiece(i){
+  if (!pieces[i]) return;
+  selectedPieceIndex = i;
+  renderPieces();
+}
+
+// check if piece fits at grid origin (col,row)
+function fitsAt(piece, col, row){
+  // check bounds and emptiness
+  for(const c of piece.cells){
+    const x = col + c[0], y = row + c[1];
+    if (x<0 || x>=COLS || y<0 || y>=ROWS) return false;
+    if (grid[y*COLS + x] !== 0) return false;
+  }
+  return true;
+}
+
+// place piece at origin
+function placePieceAt(piece, col, row){
+  for(const c of piece.cells){
+    const x = col + c[0], y = row + c[1];
+    grid[y*COLS + x] = piece.id;
+  }
+  markOccupied();
+  clearLinesAndScore();
+}
+
+// mark occupied cells visuals
+function markOccupied(){
+  for(let i=0;i<NUM_CELLS;i++){
+    const cell = cellEls[i];
+    if (grid[i] !== 0) cell.classList.add('occupied'); else cell.classList.remove('occupied');
+    cell.innerHTML = ''; // clear overlays
+  }
+}
+
+// clear full rows/columns and increase score
+function clearLinesAndScore(){
+  let cleared = 0;
+  // rows
+  for(let r=0;r<ROWS;r++){
+    let full = true;
+    for(let c=0;c<COLS;c++){
+      if (grid[r*COLS + c] === 0){ full = false; break; }
+    }
+    if (full){
+      // clear row, shift above down
+      for(let rr=r; rr>0; rr--){
+        for(let c=0;c<COLS;c++){
+          grid[rr*COLS + c] = grid[(rr-1)*COLS + c];
+        }
+      }
+      // top row empty
+      for(let c=0;c<COLS;c++) grid[c] = 0;
+      cleared++;
+    }
+  }
+  // cols
+  for(let c=0;c<COLS;c++){
+    let full = true;
+    for(let r=0;r<ROWS;r++){
+      if (grid[r*COLS + c] === 0){ full = false; break; }
+    }
+    if (full){
+      // clear column
+      for(let r=0;r<ROWS;r++) grid[r*COLS + c] = 0;
+      cleared++;
+    }
+  }
+  if (cleared>0){
+    score += cleared * 10;
+    scoreEl.textContent = score;
+    // animate cleared cells briefly
+    pulseClear();
+  }
+}
+
+// helper pulse
+function pulseClear(){
+  for(let i=0;i<NUM_CELLS;i++){
+    const cell = cellEls[i];
+    if (!cell.classList.contains('occupied')) continue;
+    cell.style.transform = 'scale(1.02)';
+    setTimeout(()=> cell.style.transform = '', 160);
+  }
+}
+
+// hover preview
+function onCellHover(e){
+  if (selectedPieceIndex<0) return;
+  const idx = +e.currentTarget.dataset.idx;
+  const row = Math.floor(idx/COLS), col = idx%COLS;
+  const piece = pieces[selectedPieceIndex];
+  // show preview overlay on each involved cell
+  clearHover();
+  for(const c of piece.cells){
+    const x = col + c[0], y = row + c[1];
+    if (x<0 || x>=COLS || y<0 || y>=ROWS){
+      // highlight invalid cells maybe
+      e.currentTarget.classList.add('hover-bad');
+    } else {
+      const ic = y*COLS + x;
+      const cell = cellEls[ic];
+      if (grid[ic] === 0) cell.classList.add('hover-ok'); else cell.classList.add('hover-bad');
+    }
+  }
+}
+function onCellOut(e){
+  clearHover();
+}
+function clearHover(){
+  cellEls.forEach(c => { c.classList.remove('hover-ok','hover-bad'); });
+}
+
+// click to place
+function onCellClick(e){
+  if (selectedPieceIndex<0) return;
+  const idx = +e.currentTarget.dataset.idx;
+  const row = Math.floor(idx/COLS), col = idx%COLS;
+  const piece = pieces[selectedPieceIndex];
+  if (fitsAt(piece, col, row)){
+    // place
+    placePieceAt(piece,col,row);
+    // remove piece from pool
+    pieces.splice(selectedPieceIndex,1);
+    selectedPieceIndex = -1;
+    // refill pool if empty
+    refillPieces();
+    renderPieces();
+    markOccupied();
+  } else {
+    // shake cell to show invalid
+    e.currentTarget.style.transform = 'translateX(8px)';
+    setTimeout(()=> e.currentTarget.style.transform = '', 140);
+  }
+}
+
+// refill to 3 pieces
+function refillPieces(){
+  while(pieces.length < 3){
+    pieces.push(makePiece());
+  }
+  piecesLeftEl.textContent = pieces.length;
+}
+
+// make piece factory (with some labeling)
+function makePiece(){
+  const base = randShape();
+  // random rotate 0/90/180/270
+  const rot = Math.floor(Math.random()*4);
+  let w = base.w, h = base.h, cells = base.cells.map(c=>[c[0],c[1]]);
+  for(let r=0;r<rot;r++){
+    const newCells = [];
+    for(const cc of cells) newCells.push([cc[1], w-1-cc[0]]);
+    cells = newCells;
+    const tmp = w; w = h; h = tmp;
+  }
+  return {
+    id: pieceIdCounter++,
+    w, h, cells,
+    name: randName()
+  };
+}
+
+// initial pieces pool
+function makeInitialPieces(){
+  pieces = [];
+  refillPieces();
+  renderPieces();
+}
+
+// random shape from SHAPES
+function randShape(){
+  return JSON.parse(JSON.stringify(SHAPES[Math.floor(Math.random()*SHAPES.length)]));
+}
+
+// Reset board
+function resetBoard(){
+  grid.fill(0);
+  score = 0; scoreEl.textContent = score;
+  pieceIdCounter = 1;
+  selectedPieceIndex = -1;
+  makeInitialPieces();
+  markOccupied();
+}
+
+// hint: find first available placement for first piece
+function hint(){
+  if (pieces.length===0) return;
+  const p = pieces[0];
+  for(let r=0;r<ROWS;r++){
+    for(let c=0;c<COLS;c++){
+      if (fitsAt(p,c,r)){
+        // flash sequence to show
+        for(const cc of p.cells){
+          const idx = (r+cc[1])*COLS + (c+cc[0]);
+          const el = cellEls[idx];
+          el.style.outline = '2px solid rgba(0,255,150,0.12)';
+          setTimeout(()=> el.style.outline='', 900);
+        }
+        return;
+      }
+    }
+  }
+  // no hint: flash all
+  boardEl.style.boxShadow = '0 0 50px rgba(255,80,120,0.06)';
+  setTimeout(()=> boardEl.style.boxShadow = '', 600);
+}
+
+// switch between phrase modes
+let phraseIndex = 0;
+const PHRASES = [
+  "THANHTRUCLINGU NGOANXX", // will be normalized
+  "ANHYUUTHANHTRUCNHIEUXX"
+];
+function swapWords(){
+  phraseIndex = (phraseIndex+1)%2;
+  // Convert phrase into initial tiles: fill tiles left-to-right with letters of phrase (exclude trailing X)
+  const letters = PHRASES[phraseIndex].replace(/X/g,'').split('');
+  // reset tiles with letters in solved order
+  resetBoard();
+  // assign letters to tiles (board cells order -> create temporary tiles placed in top-left positions)
+  // We'll create tiles occupying 1x1 shapes and place them into a "initial solved area" to allow sliding
+  // Clear any pieces and create letters as 1x1 tiles in the top-left region sequentially
+  pieces = [];
+  selectedPieceIndex = -1;
+  renderPieces();
+  // populate small tiles on board directly (like solved)
+  grid.fill(0);
+  let idx=0;
+  for(let i=0;i<NUM_CELLS-1 && idx<letters.length;i++){
+    // put letter as occupied placeholder by marking grid cell with special id (negative)
+    grid[i]= - (letters[idx].charCodeAt(0)); // not used visually beyond occupancy
+    idx++;
+  }
+  // after short time clear and return to empty board
+  setTimeout(()=>{
+    for(let i=0;i<NUM_CELLS;i++) grid[i]=0;
+    markOccupied();
+  },40);
+  markOccupied();
+}
+
+// UI events
+document.getElementById('resetBtn').addEventListener('click', resetBoard);
+document.getElementById('hintBtn').addEventListener('click', hint);
+document.getElementById('shufflePieces').addEventListener('click', ()=>{
+  pieces = [];
+  refillPieces();
+  renderPieces();
+});
+document.getElementById('swapWords').addEventListener('click', swapWords);
+
+// initial build
+buildBoard();
+makeInitialPieces();
+renderPieces();
+markOccupied();
+</script>
+
+</body>
+</html>
