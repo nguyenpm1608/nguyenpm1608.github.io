@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Puzzle Thanh Trúc</title>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      background: linear-gradient(135deg, #ffdde1, #ee9ca7);
+      font-family: "Segoe UI", sans-serif;
+    }
+    h1 {
+      color: white;
+      font-size: 28px;
+      margin-bottom: 10px;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    #puzzle {
+      display: grid;
+      grid-template-columns: repeat(4, 100px);
+      grid-template-rows: repeat(4, 100px);
+      gap: 2px;
+      background: #333;
+      padding: 4px;
+      border-radius: 12px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+    }
+    .tile {
+      width: 100px;
+      height: 100px;
+      background-size: 400px 400px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .tile:hover {
+      transform: scale(1.05);
+    }
+    #controls {
+      margin-top: 20px;
+    }
+    button {
+      padding: 12px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 10px;
+      background: #ff4d6d;
+      color: white;
+      cursor: pointer;
+      transition: 0.3s;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    button:hover {
+      background: #e63950;
+    }
+  </style>
+</head>
+<body>
+  <h1>Game Xếp Hình Trúc Yêu ❤️</h1>
+  <div id="puzzle"></div>
+  <div id="controls">
+    <button id="switchBtn">Đổi ảnh</button>
+  </div>
+
+  <script>
+    const puzzle = document.getElementById("puzzle");
+    const switchBtn = document.getElementById("switchBtn");
+
+    const images = [
+      "https://i.ibb.co/5FMW4JP/thanh-truc-ngu-ngoan.png", 
+      "https://i.ibb.co/wwB4zCg/anh-yeu-thanh-truc-nhieu.png"
+    ];
+
+    let currentImage = 0;
+    let tiles = [];
+    let emptyIndex = 15;
+
+    function initPuzzle(imgUrl) {
+      puzzle.innerHTML = "";
+      tiles = [];
+      emptyIndex = 15;
+
+      for (let i = 0; i < 16; i++) {
+        if (i === 15) {
+          tiles.push(null);
+          continue;
+        }
+        const tile = document.createElement("div");
+        tile.className = "tile";
+        tile.style.backgroundImage = `url(${imgUrl})`;
+        tile.style.backgroundPosition = `-${(i % 4) * 100}px -${Math.floor(i / 4) * 100}px`;
+        tile.dataset.index = i;
+        tile.addEventListener("click", () => moveTile(i));
+        tiles.push(tile);
+        puzzle.appendChild(tile);
+      }
+      updateGrid();
+    }
+
+    function updateGrid() {
+      puzzle.innerHTML = "";
+      for (let i = 0; i < 16; i++) {
+        if (tiles[i]) puzzle.appendChild(tiles[i]);
+        else {
+          const empty = document.createElement("div");
+          empty.style.width = "100px";
+          empty.style.height = "100px";
+          puzzle.appendChild(empty);
+        }
+      }
+    }
+
+    function moveTile(i) {
+      const neighbors = [
+        i - 1, i + 1, i - 4, i + 4
+      ];
+      if (neighbors.includes(emptyIndex)) {
+        tiles[emptyIndex] = tiles[i];
+        tiles[i] = null;
+        emptyIndex = i;
+        updateGrid();
+      }
+    }
+
+    switchBtn.addEventListener("click", () => {
+      currentImage = (currentImage + 1) % images.length;
+      initPuzzle(images[currentImage]);
+    });
+
+    initPuzzle(images[currentImage]);
+  </script>
+</body>
+</html>
